@@ -1,0 +1,11 @@
+streamlit>=1.41,<2
+pydantic>=2.10,<3
+pydantic-settings>=2.7,<3
+psycopg[binary]>=3.2,<4
+google-genai>=1.0,<2
+langfuse>=2.60,<3
+sqlglot>=26,<27
+Faker>=33,<40
+
+# Local development / CI tests (not required in minimal runtime-only installs)
+pytest>=8.3,<9

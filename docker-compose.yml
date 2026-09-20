@@ -1,0 +1,45 @@
+name: synthetic-data-generation
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-data_assistant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-data_assistant_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-data_assistant}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-data_assistant} -d ${POSTGRES_DB:-data_assistant}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build: .
+    ports:
+      - "${STREAMLIT_PORT:-8501}:8501"
+    environment:
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:?Set GOOGLE_CLOUD_PROJECT on the host}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-data_assistant}:${POSTGRES_PASSWORD:-data_assistant_dev}@postgres:5432/${POSTGRES_DB:-data_assistant}
+      VERTEX_AI_LOCATION: ${VERTEX_AI_LOCATION:-us-central1}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GOOGLE_GENAI_USE_VERTEXAI: "true"
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-}
+    volumes:
+      - ${ADC_MOUNT:-${HOME}/.config/gcloud}:/root/.config/gcloud:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
