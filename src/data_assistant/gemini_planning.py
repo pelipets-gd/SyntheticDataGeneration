@@ -10,6 +10,13 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from data_assistant.generator_vocabulary import (
+    DEFAULT_DISTRIBUTION,
+    DEFAULT_GENERATOR,
+    GENERATOR_NAMES,
+    SUPPORTED_DISTRIBUTIONS,
+    is_supported_hint,
+)
 from data_assistant.querying import QueryError, compile_readonly_select
 from data_assistant.schema import DatabaseSchema, TableSchema
 from data_assistant.settings import Settings
@@ -423,6 +430,10 @@ class GeminiPlanningService:
 
 
 def _parse_plan(response: Any) -> DatabaseGenerationPlan:
+    return _drop_unsupported_hints(_read_plan(response))
+
+
+def _read_plan(response: Any) -> DatabaseGenerationPlan:
     parsed = getattr(response, "parsed", None)
     if isinstance(parsed, DatabaseGenerationPlan):
         return parsed
@@ -432,6 +443,23 @@ def _parse_plan(response: Any) -> DatabaseGenerationPlan:
     if not text:
         raise ValueError("Gemini returned no structured generation plan")
     return DatabaseGenerationPlan.model_validate(json.loads(text))
+
+
+def _drop_unsupported_hints(plan: DatabaseGenerationPlan) -> DatabaseGenerationPlan:
+    """Replace invented generator names and distributions with supported ones.
+
+    The model is free to name anything; every unsupported hint falls back to
+    column-name inference instead of failing the whole plan.
+    """
+    for table in plan.tables:
+        for column in table.columns:
+            if not is_supported_hint(column.generator):
+                column.generator = DEFAULT_GENERATOR
+            if not is_supported_hint(column.semantic_type):
+                column.semantic_type = None
+            if column.distribution not in SUPPORTED_DISTRIBUTIONS:
+                column.distribution = DEFAULT_DISTRIBUTION
+    return plan
 
 
 def _parse_feedback_call(call: Any, table: TableSchema) -> FeedbackOperation:
@@ -627,6 +655,9 @@ def _plan_prompt(schema: DatabaseSchema) -> str:
     return (
         "Create a realistic synthetic-data generation plan for this normalized schema. "
         "Respect SQL nullability, types, ranges, categories, and relationships. "
+        f"Set generator and semantic_type only to one of: {', '.join(GENERATOR_NAMES)}; "
+        f"use {DEFAULT_GENERATOR!r} when no other name fits. "
+        f"Set distribution only to one of: {', '.join(sorted(SUPPORTED_DISTRIBUTIONS))}. "
         f"Schema: {_schema_payload(schema)}"
     )
 

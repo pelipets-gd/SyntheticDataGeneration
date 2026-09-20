@@ -20,6 +20,11 @@ from typing import Any, TypeVar
 from faker import Faker
 
 from data_assistant.gemini_planning import ColumnGenerationPlan, DatabaseGenerationPlan
+from data_assistant.generator_vocabulary import (
+    SUPPORTED_DISTRIBUTIONS,
+    canonical_generator,
+    is_supported_hint,
+)
 from data_assistant.schema import (
     ColumnSchema,
     DatabaseSchema,
@@ -56,25 +61,6 @@ _UNIQUE_ATTEMPTS = 12
 _MUTATION_ATTEMPTS = 10_000
 _ORDERING_OPERATORS = frozenset({"<", "<=", ">", ">="})
 _ORDERED_TYPES = frozenset({"INT", "DECIMAL", "DATE", "DATETIME"})
-_SUPPORTED_DISTRIBUTIONS = frozenset({"uniform", "sequential"})
-_TYPE_GENERATORS = frozenset(
-    {
-        "auto",
-        "boolean",
-        "date",
-        "datetime",
-        "decimal",
-        "default",
-        "enum",
-        "float",
-        "int",
-        "integer",
-        "number",
-        "numeric",
-        "random",
-        "timestamp",
-    }
-)
 
 
 class GenerationError(RuntimeError):
@@ -968,14 +954,13 @@ def _reject_unsupported_column_plan(
     table: TableSchema, column: ColumnSchema, plan: ColumnGenerationPlan
 ) -> None:
     location = f"{table.name}.{column.name}"
-    if plan.distribution not in _SUPPORTED_DISTRIBUTIONS:
+    if plan.distribution not in SUPPORTED_DISTRIBUTIONS:
         raise GenerationError(
             f"{location} asks for the {plan.distribution!r} distribution, which is not "
-            f"supported; use one of {', '.join(sorted(_SUPPORTED_DISTRIBUTIONS))}"
+            f"supported; use one of {', '.join(sorted(SUPPORTED_DISTRIBUTIONS))}"
         )
     for hint in (plan.generator, plan.semantic_type):
-        token = _normalize(hint)
-        if token and token not in _GENERATOR_ALIASES and token not in _TYPE_GENERATORS:
+        if hint and not is_supported_hint(hint):
             raise GenerationError(
                 f"{location} asks for the unknown generator {hint!r}"
             )
@@ -1242,55 +1227,6 @@ def _plans_by_column(
     }
 
 
-_GENERATOR_ALIASES = {
-    "name": "full_name",
-    "full_name": "full_name",
-    "person_name": "full_name",
-    "first_name": "first_name",
-    "given_name": "first_name",
-    "last_name": "last_name",
-    "surname": "last_name",
-    "family_name": "last_name",
-    "email": "email",
-    "email_address": "email",
-    "phone": "phone",
-    "phone_number": "phone",
-    "telephone": "phone",
-    "address": "address",
-    "street_address": "address",
-    "city": "city",
-    "state": "state",
-    "state_abbr": "state",
-    "province": "state",
-    "country": "country",
-    "zip": "zip_code",
-    "zip_code": "zip_code",
-    "postcode": "zip_code",
-    "postal_code": "zip_code",
-    "company": "company",
-    "company_name": "company",
-    "employer": "company",
-    "organization": "company",
-    "url": "url",
-    "website": "url",
-    "uri": "url",
-    "link": "url",
-    "text": "text",
-    "paragraph": "text",
-    "description": "text",
-    "sentence": "sentence",
-    "title": "sentence",
-    "word": "word",
-    "job": "job",
-    "job_title": "job",
-    "isbn": "isbn",
-    "label": "label",
-    "license": "license",
-    "uuid": "uuid",
-    "time": "time",
-    "sequence": "sequence",
-}
-
 _PERSON_WORDS = (
     "applicant",
     "author",
@@ -1354,7 +1290,7 @@ def _resolve_generator(
 ) -> str:
     if plan is not None:
         for hint in (plan.generator, plan.semantic_type):
-            token = _GENERATOR_ALIASES.get(_normalize(hint))
+            token = canonical_generator(hint)
             if token is not None:
                 return token
     key = column.name.casefold()
@@ -1369,12 +1305,6 @@ def _resolve_generator(
 
 def _describes_people(*names: str) -> bool:
     return any(word in name for name in names for word in _PERSON_WORDS)
-
-
-def _normalize(value: str | None) -> str:
-    if not value:
-        return ""
-    return value.strip().casefold().replace(" ", "_").replace("-", "_")
 
 
 def _allowed_values(

@@ -20,6 +20,7 @@ from data_assistant.gemini_planning import (
     TransformValuesOperation,
     create_google_client,
 )
+from data_assistant.generation import SyntheticDataGenerator
 from data_assistant.schema import parse_ddl
 from data_assistant.settings import Settings
 
@@ -159,7 +160,7 @@ def test_request_plan_passes_structured_schema_and_validates_against_database() 
     plan = service.request_plan(SCHEMA, temperature=0.25)
 
     assert isinstance(plan, DatabaseGenerationPlan)
-    assert plan.tables[0].columns[0].semantic_type == "customer segment"
+    assert plan.tables[0].table_name == "Customers"
     _, model, config, _contents = fake.calls[0]
     assert model == "gemini-2.5-flash"
     assert config.response_mime_type == "application/json"
@@ -187,6 +188,22 @@ def test_generation_plan_schema_converts_with_installed_google_genai_sdk() -> No
     invalid["tables"][0]["row_count"] = 0
     with pytest.raises(ValidationError):
         DatabaseGenerationPlan.model_validate(invalid)
+
+
+def test_request_plan_keeps_invented_generator_names_out_of_the_plan() -> None:
+    invented = _valid_plan()
+    invented["tables"][0]["columns"][0]["generator"] = "sequential_integer"
+    service = GeminiPlanningService(
+        _settings(), client=FakeClient(response=FakeResponse(parsed=invented))
+    )
+
+    plan = service.request_plan(SCHEMA)
+
+    category = plan.tables[0].columns[0]
+    assert category.generator == "auto"
+    assert category.semantic_type is None
+    assert category.distribution == "uniform"
+    assert len(SyntheticDataGenerator().generate(SCHEMA, plan, seed=1)["Customers"]) == 25
 
 
 def test_request_plan_rejects_unknown_columns() -> None:

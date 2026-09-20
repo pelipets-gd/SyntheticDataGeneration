@@ -74,6 +74,8 @@ Open Streamlit at [http://localhost:8501](http://localhost:8501) (or the port yo
 
 Two modules turn a parsed schema, plus an optional Gemini plan, into rows and then prove those rows satisfy the schema.
 
+`generator_vocabulary.py` holds the generator names and distributions both sides agree on. The planning prompt lists them, and any name the model invents anyway is replaced with `auto` before the plan reaches the generator, so one hallucinated hint falls back to column-name inference instead of failing the run.
+
 ### `generation.py` — `SyntheticDataGenerator`
 
 `generate(schema, plan=None, row_count=None, seed=0)` returns `{table_name: [row, ...]}`. The same seed always produces the same dataset, and the generator validates its own output before returning; anything that cannot be produced safely raises `GenerationError` instead of emitting invalid rows.
